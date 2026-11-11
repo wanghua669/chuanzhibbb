@@ -34,7 +34,6 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
         }
         onUpdateCameraState((prev) => ({ ...prev, hasPermission: true }));
 
-        // 轻量纯 CPU 帧特征质心追踪（计算人脸位置偏移 X,Y,Z 与环境亮度）
         const trackFrame = () => {
           const video = videoRef.current;
           const canvas = canvasRef.current;
@@ -57,7 +56,6 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
                   const luma = 0.299 * r + 0.587 * g + 0.114 * b;
                   totalLuma += luma;
 
-                  // 肤色与高亮特征区域权重计算
                   const isSkinTone = r > 75 && g > 40 && b > 25 && r > g && r > b;
                   const w = isSkinTone ? luma * 2.2 : luma * 0.25;
                   sumX += x * w;
@@ -68,9 +66,8 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
 
               const avgLuma = Math.round(totalLuma / ((64 * 48) / 4));
               if (weightTotal > 0) {
-                const cx = sumX / weightTotal / 64; // 0 ~ 1
-                const cy = sumY / weightTotal / 48; // 0 ~ 1
-                // 镜像翻转 X 使得头往左偏时视角自然联动
+                const cx = sumX / weightTotal / 64;
+                const cy = sumY / weightTotal / 48;
                 const normX = Math.max(-1, Math.min(1, (0.5 - cx) * 2.8));
                 const normY = Math.max(-1, Math.min(1, (cy - 0.5) * 2.4));
 
@@ -87,7 +84,7 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
         };
         animId = requestAnimationFrame(trackFrame);
       } catch {
-        setStreamError('未检测到摄像头或权限未开启，已平滑启用「鼠标/姿态仿真3D视差」');
+        setStreamError('未开启摄像头权限，已平滑启用「鼠标/姿态 2.5D 视差感应」');
         onUpdateCameraState((prev) => ({
           ...prev,
           enabled: false,
@@ -130,11 +127,11 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800/90 bg-slate-900/75 px-4 py-2.5 backdrop-blur-md">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* 左侧：摄像头落地窗开关与裸眼3D视差状态 */}
-        <div className="flex items-center gap-3">
-          <div className="relative h-10 w-14 overflow-hidden rounded-lg border border-cyan-500/40 bg-slate-950 flex items-center justify-center shrink-0">
+    <div className="rounded-2xl border-2 border-[#E2D0BA] bg-[#FFFDF9] px-3.5 py-2 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* 左侧：前置摄像头落地窗与视差参数 */}
+        <div className="flex items-center gap-2.5">
+          <div className="relative h-9 w-12 overflow-hidden rounded-xl border border-[#D4B895] bg-[#F5EBE0] flex items-center justify-center shrink-0">
             <video
               ref={videoRef}
               muted
@@ -145,38 +142,44 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
             />
             <canvas ref={canvasRef} width={64} height={48} className="hidden" />
             {!cameraState.enabled && (
-              <div className="flex flex-col items-center justify-center text-cyan-400/80">
-                <Move3d className="h-4 w-4 animate-pulse" />
-                <span className="text-[9px] font-mono">2.5D视差</span>
+              <div className="flex flex-col items-center justify-center text-[#B07D54]">
+                <Move3d className="h-3.5 w-3.5" />
+                <span className="text-[8px] font-bold">2.5D视差</span>
               </div>
             )}
-            <span className="absolute bottom-0.5 right-1 h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+            <span className="absolute bottom-0.5 right-1 h-1.5 w-1.5 rounded-full bg-[#6B9E78]" />
           </div>
 
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5 text-cyan-400" />
-                前置摄像头“落地窗” & 裸眼 3D 视差引擎
+              <span className="text-xs font-extrabold text-[#4A3525] flex items-center gap-1">
+                <Eye className="h-3.5 w-3.5 text-[#E07A5F]" />
+                前置摄像头“阳光落地窗” & 裸眼 3D 视差传感器
               </span>
-              <span className="rounded-md bg-slate-800 px-2 py-0.5 font-mono text-[10px] text-cyan-300 border border-slate-700">
-                视角偏移 X:{cameraState.headX.toFixed(2)} Y:{cameraState.headY.toFixed(2)} Z:{cameraState.headZ.toFixed(2)}
+              <span className="rounded-lg bg-[#F5EBE0] px-2 py-0.5 font-mono text-[10px] font-semibold text-[#7C5D41] border border-[#E2D0BA]">
+                X:{cameraState.headX.toFixed(2)} Y:{cameraState.headY.toFixed(2)}
               </span>
+              {cameraState.lastVisionSummary && (
+                <span className="hidden xl:inline-flex items-center gap-1 text-[11px] text-[#8A725E]">
+                  <Sparkles className="h-3 w-3 text-[#E07A5F]" />
+                  {cameraState.lastVisionSummary.slice(0, 32)}...
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[11px] text-[#8A725E]">
               {streamError
                 ? streamError
                 : cameraState.enabled
-                ? `实时面部追踪运行中 | 环境亮度 ${cameraState.brightness} | 小人正透过屏幕观察您的状态`
-                : '将鼠标在房间内移动或开启摄像头，即可体验“凹进屏幕里的 2.5D 立体玻璃盒”视差透视'}
+                ? `实景面部追踪开启 | 环境亮度 ${cameraState.brightness} | 小人正透过阳光木窗注视着你`
+                : '将鼠标在阳光木屋内轻轻移动或开启摄像头，即可感受“立体微缩娃娃屋”视差透视'}
             </p>
           </div>
         </div>
 
-        {/* 右侧：摄像头开关 + 情绪感知触发器（方便无摄像头或演示时一键模拟表情互动） */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1 rounded-xl border border-slate-800 bg-slate-950/80 p-1">
-            <span className="px-2 text-[11px] text-slate-400 hidden sm:inline">
+        {/* 右侧：主人状态感知模拟与摄像头开关 */}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 rounded-xl border border-[#E2D0BA] bg-[#FAF3E8] p-1">
+            <span className="px-1.5 text-[11px] font-medium text-[#7C5D41] hidden sm:inline">
               感知主人状态:
             </span>
             <button
@@ -184,18 +187,17 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
               onClick={() =>
                 simulateExpression(
                   'smiling',
-                  '微笑注视 😊',
-                  '摄像头捕捉到主人对着屏幕露出了温暖的微笑，还往前凑近了屏幕'
+                  '温暖微笑 😊',
+                  '落地窗捕捉到主人露出了温暖的微笑，小人开心得挥手回应'
                 )
               }
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition ${
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition ${
                 cameraState.userExpression === 'smiling'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'text-slate-300 hover:bg-slate-800'
+                  ? 'bg-[#E8F3EA] text-[#2F6B40] border border-[#6B9E78]/40 shadow-sm'
+                  : 'text-[#6E4F35] hover:bg-[#EFE4D4]'
               }`}
-              title="模拟摄像头检测到主人微笑注视"
             >
-              <Smile className="h-3.5 w-3.5 text-emerald-400" />
+              <Smile className="h-3.5 w-3.5 text-[#6B9E78]" />
               微笑贴贴
             </button>
             <button
@@ -203,19 +205,18 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
               onClick={() =>
                 simulateExpression(
                   'focused',
-                  '深度专注 💻',
-                  '摄像头检测到主人正戴着耳机全神贯注盯着屏幕写代码'
+                  '专注伴学 💻',
+                  '检测到主人正在全神贯注工作学习，小人也乖乖开启伴学模式'
                 )
               }
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition ${
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition ${
                 cameraState.userExpression === 'focused'
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                  : 'text-slate-300 hover:bg-slate-800'
+                  ? 'bg-[#FDE68A]/70 text-[#92400E] border border-[#F59E0B]/40 shadow-sm'
+                  : 'text-[#6E4F35] hover:bg-[#EFE4D4]'
               }`}
-              title="模拟摄像头检测到主人深度专注"
             >
-              <Zap className="h-3.5 w-3.5 text-cyan-400" />
-              专注工作
+              <Zap className="h-3.5 w-3.5 text-[#D97706]" />
+              专注伴学
             </button>
             <button
               type="button"
@@ -223,55 +224,43 @@ export const CameraPerceptionBar: React.FC<CameraPerceptionBarProps> = ({
                 simulateExpression(
                   'tired',
                   '疲惫揉眼 🥱',
-                  '摄像头捕捉到主人揉了揉眼睛并叹气，环境有些暗，需要休息和音乐陪伴'
+                  '捕捉到主人揉眼叹气，小人主动走去摇动复古留声机播放治愈旋律'
                 )
               }
-              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition ${
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition ${
                 cameraState.userExpression === 'tired'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : 'text-slate-300 hover:bg-slate-800'
+                  ? 'bg-[#FCE7F3] text-[#9D174D] border border-[#F472B6]/40 shadow-sm'
+                  : 'text-[#6E4F35] hover:bg-[#EFE4D4]'
               }`}
-              title="模拟摄像头检测到主人疲惫（触发小人走来安慰并开八音盒）"
             >
-              <Coffee className="h-3.5 w-3.5 text-amber-400" />
-              疲惫揉眼
+              <Coffee className="h-3.5 w-3.5 text-[#E07A5F]" />
+              疲惫安慰
             </button>
           </div>
 
           <button
             type="button"
             onClick={toggleCamera}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition ${
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border transition ${
               cameraState.enabled
-                ? 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
-                : 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25'
+                ? 'border-[#E07A5F] bg-[#FDE8E1] text-[#B84A2E]'
+                : 'border-[#D4B895] bg-[#F5EBE0] text-[#5C4028] hover:bg-[#EADBC8]'
             }`}
           >
             {cameraState.enabled ? (
               <>
                 <CameraOff className="h-3.5 w-3.5" />
-                关闭摄像头
+                关闭实景追踪
               </>
             ) : (
               <>
-                <Camera className="h-3.5 w-3.5" />
-                开启实景头部追踪
+                <Camera className="h-3.5 w-3.5 text-[#E07A5F]" />
+                开启摄像头视差
               </>
             )}
           </button>
         </div>
       </div>
-
-      {/* 视觉环境理解摘要条 */}
-      {cameraState.lastVisionSummary && (
-        <div className="mt-2 flex items-center gap-2 rounded-lg bg-cyan-950/30 border border-cyan-500/20 px-3 py-1 text-[11px] text-cyan-200">
-          <Sparkles className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
-          <span>
-            <strong>视觉感知落地窗反馈：</strong>
-            {cameraState.lastVisionSummary}
-          </span>
-        </div>
-      )}
     </div>
   );
 };

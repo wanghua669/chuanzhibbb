@@ -5,7 +5,18 @@ import {
   CameraPerceptionState,
   BrainActionType,
 } from '../types/cyber';
-import { Sparkles, Eye, Volume2, VolumeX, Home, RotateCcw } from 'lucide-react';
+import {
+  Sparkles,
+  Eye,
+  Volume2,
+  VolumeX,
+  Home,
+  RotateCcw,
+  Sun,
+  Sunset,
+  Moon,
+} from 'lucide-react';
+import { loadCozyPixelAssets, LoadedPixelAssets } from '../services/pixelSpriteEngine';
 
 interface CyberRoomCanvasProps {
   persona: PersonaProfile;
@@ -43,15 +54,33 @@ export const CyberRoomCanvas: React.FC<CyberRoomCanvasProps> = ({
   onMouseParallax,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const assetsRef = useRef<LoadedPixelAssets | null>(null);
+  const [assetsReady, setAssetsReady] = useState(false);
+  const [lightingMode, setLightingMode] = useState<'sunlit' | 'sunset' | 'night'>('sunlit');
+  const [draggingName, setDraggingName] = useState<string | null>(null);
+
   const avatarPosRef = useRef<{ x: number; y: number; facing: 'left' | 'right' }>({
-    x: 0.5,
-    y: 0.65,
+    x: 0.48,
+    y: 0.68,
     facing: 'right',
   });
   const draggingIdRef = useRef<string | null>(null);
-  const [draggingName, setDraggingName] = useState<string | null>(null);
 
   const placedItems = furniture.filter((f) => f.placed);
+
+  // 加载高精度 32-Bit 像素房间与自动抠图后的角色/家具精灵表
+  useEffect(() => {
+    let mounted = true;
+    loadCozyPixelAssets().then((loaded) => {
+      if (mounted) {
+        assetsRef.current = loaded;
+        setAssetsReady(loaded.ready);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -62,406 +91,314 @@ export const CyberRoomCanvas: React.FC<CyberRoomCanvasProps> = ({
     let animId: number;
     let tick = 0;
 
+    // 预生成阳光微尘粒子 (Cozy Sunbeam Dust Motes)
+    const dustMotes = Array.from({ length: 22 }, (_, i) => ({
+      x: ((i * 53) % 100) / 100,
+      y: ((i * 31) % 100) / 100,
+      size: 1.5 + (i % 3),
+      speedY: 0.0003 + (i % 4) * 0.0001,
+      phase: i * 0.7,
+    }));
+
     const renderLoop = () => {
       tick++;
       const w = canvas.width;
       const h = canvas.height;
       ctx.clearRect(0, 0, w, h);
+      ctx.imageSmoothingEnabled = false;
 
-      // 1. 平滑更新像素小人物理坐标
+      // 1. 平滑更新像素分身坐标
       const av = avatarPosRef.current;
       const dx = targetCoord.x - av.x;
       const dy = targetCoord.y - av.y;
       const dist = Math.hypot(dx, dy);
 
       if (dist > 0.012) {
-        av.x += dx * 0.045;
-        av.y += dy * 0.045;
+        av.x += dx * 0.048;
+        av.y += dy * 0.048;
         av.facing = dx >= 0 ? 'right' : 'left';
       }
 
-      // 2. 计算 2.5D 裸眼 3D 视差偏移 (Head-Coupled Perspective)
-      const idleBreathX = Math.sin(tick * 0.02) * 0.06;
-      const idleBreathY = Math.cos(tick * 0.016) * 0.04;
-      const px = (cameraState.headX + idleBreathX) * 32;
-      const py = (cameraState.headY + idleBreathY) * 20;
+      // 2. 计算 2.5D 裸眼视差偏移 (Head-Coupled Perspective)
+      const breathX = Math.sin(tick * 0.02) * 0.04;
+      const breathY = Math.cos(tick * 0.016) * 0.03;
+      const px = (cameraState.headX + breathX) * 26;
+      const py = (cameraState.headY + breathY) * 16;
 
-      // 3. 绘制深空背景与 2.5D 凹陷玻璃房盒子 (後墙 + 左右侧壁 + 顶棚 + 网格地板)
-      const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-      bgGrad.addColorStop(0, '#070b19');
-      bgGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = bgGrad;
-      ctx.fillRect(0, 0, w, h);
+      const assets = assetsRef.current;
 
-      // 后墙矩形（随头部移动产生深度反向偏移，形成凹入屏幕的立体箱庭感）
-      const backLeft = w * 0.14 - px * 0.85;
-      const backRight = w * 0.86 - px * 0.85;
-      const backTop = h * 0.13 - py * 0.85;
-      const backBottom = h * 0.62 - py * 0.85;
+      // 3. 绘制 32-Bit 精绘阳光木屋底图（带视差缩放余量）
+      if (assets && assets.roomBg) {
+        const padX = 36;
+        const padY = 24;
+        ctx.drawImage(
+          assets.roomBg,
+          -padX - px * 0.75,
+          -padY - py * 0.75,
+          w + padX * 2,
+          h + padY * 2
+        );
+      } else {
+        // 备用暖色木屋背景
+        ctx.fillStyle = '#F5E6D3';
+        ctx.fillRect(0, 0, w, h);
+      }
 
-      // 左墙面
-      ctx.fillStyle = '#0d1528';
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(backLeft, backTop);
-      ctx.lineTo(backLeft, backBottom);
-      ctx.lineTo(0, h * 0.92);
-      ctx.closePath();
-      ctx.fill();
-
-      // 右墙面
-      ctx.fillStyle = '#0b1122';
-      ctx.beginPath();
-      ctx.moveTo(w, 0);
-      ctx.lineTo(backRight, backTop);
-      ctx.lineTo(backRight, backBottom);
-      ctx.lineTo(w, h * 0.92);
-      ctx.closePath();
-      ctx.fill();
-
-      // 天花板
-      ctx.fillStyle = '#090e1c';
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(w, 0);
-      ctx.lineTo(backRight, backTop);
-      ctx.lineTo(backLeft, backTop);
-      ctx.closePath();
-      ctx.fill();
-
-      // 地板 (2.5D 透视梯形)
-      const floorGrad = ctx.createLinearGradient(0, backBottom, 0, h);
-      floorGrad.addColorStop(0, '#111c35');
-      floorGrad.addColorStop(1, '#1e293b');
-      ctx.fillStyle = floorGrad;
-      ctx.beginPath();
-      ctx.moveTo(backLeft, backBottom);
-      ctx.lineTo(backRight, backBottom);
-      ctx.lineTo(w, h * 0.92);
-      ctx.lineTo(0, h * 0.92);
-      ctx.closePath();
-      ctx.fill();
-
-      // 后墙主体
-      const wallGrad = ctx.createLinearGradient(backLeft, backTop, backLeft, backBottom);
-      wallGrad.addColorStop(0, '#0f172a');
-      wallGrad.addColorStop(1, '#16223be6');
-      ctx.fillStyle = wallGrad;
-      ctx.fillRect(backLeft, backTop, backRight - backLeft, backBottom - backTop);
-
-      // 绘制 2.5D 透视地板网格线与墙面霓虹边框
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.16)';
-      ctx.lineWidth = 1;
-      for (let i = 0; i <= 8; i++) {
-        const t = i / 8;
-        const bx = backLeft + (backRight - backLeft) * t;
-        const fx = w * t;
+      // 若用户点击了“空白小屋初始态”（placedItems 为空），在地板中央铺设温和的米色编织地毯区域遮罩以便从零摆放
+      if (placedItems.length === 0) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(251, 246, 238, 0.72)';
         ctx.beginPath();
-        ctx.moveTo(bx, backBottom);
-        ctx.lineTo(fx, h * 0.92);
+        ctx.roundRect(w * 0.12 - px * 0.5, h * 0.45 - py * 0.5, w * 0.76, h * 0.44, 16);
+        ctx.fill();
+        ctx.strokeStyle = '#D4B895';
+        ctx.setLineDash([6, 6]);
+        ctx.lineWidth = 2;
         ctx.stroke();
-      }
-      for (let j = 1; j <= 4; j++) {
-        const tj = j / 5;
-        const ly = backBottom + (h * 0.92 - backBottom) * tj;
-        const lx = backLeft * (1 - tj);
-        const rx = backRight + (w - backRight) * tj;
-        ctx.beginPath();
-        ctx.moveTo(lx, ly);
-        ctx.lineTo(rx, ly);
-        ctx.stroke();
+        ctx.fillStyle = '#8C6D53';
+        ctx.font = 'bold 13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('✨ 空白小屋模式：点击下方「像素家具图鉴」或「AI造物工坊」开始布置专属小窝', w * 0.5, h * 0.84);
+        ctx.restore();
       }
 
-      // 4. 后墙赛博星空落地景观窗
-      const winW = (backRight - backLeft) * 0.36;
-      const winH = (backBottom - backTop) * 0.52;
-      const winX = (backLeft + backRight) / 2 - winW / 2;
-      const winY = backTop + 22;
-
-      ctx.fillStyle = '#050814';
-      ctx.fillRect(winX, winY, winW, winH);
-      ctx.strokeStyle = persona.accentColor;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(winX, winY, winW, winH);
-
-      // 窗内视差星空与赛博月亮
-      const starShiftX = -px * 1.35;
-      const starShiftY = -py * 1.35;
-      ctx.fillStyle = '#fde047';
-      ctx.beginPath();
-      ctx.arc(winX + winW * 0.72 + starShiftX * 0.3, winY + winH * 0.32 + starShiftY * 0.3, 10, 0, Math.PI * 2);
-      ctx.fill();
-
-      for (let s = 0; s < 14; s++) {
-        const sx = winX + ((s * 37 + 19) % Math.floor(winW - 12)) + 6;
-        const sy = winY + ((s * 23 + 11) % Math.floor(winH - 12)) + 6;
-        const blink = (Math.sin(tick * 0.06 + s) + 1) * 0.5;
-        ctx.fillStyle = `rgba(186, 230, 253, ${0.3 + blink * 0.7})`;
-        ctx.fillRect(sx, sy, 2, 2);
-      }
-
-      // 房间内框发光棱线
-      ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(backLeft, backTop, backRight - backLeft, backBottom - backTop);
-
-      // 5. 绘制房间内的像素家具（按 Y 深度排序，保证遮挡关系真实）
+      // 4. 按 Y 轴深度排序并绘制精绘像素家具精灵 (Furniture Sprites)
       const sortedFurniture = [...placedItems].sort((a, b) => a.y - b.y);
 
-      const drawFurnitureItem = (item: FurnitureItem) => {
-        const depthFactor = (item.y - 0.35) / 0.55; // 0 (远) ~ 1 (近)
-        const layerShiftX = -px * (0.75 - depthFactor * 0.55);
-        const layerShiftY = -py * (0.75 - depthFactor * 0.55);
-        const fx = item.x * w + layerShiftX;
-        const fy = item.y * h + layerShiftY;
+      const drawFurnitureSprite = (item: FurnitureItem) => {
+        const depthFactor = (item.y - 0.35) / 0.55;
+        const shiftX = -px * (0.72 - depthFactor * 0.45);
+        const shiftY = -py * (0.72 - depthFactor * 0.45);
+        const fx = item.x * w + shiftX;
+        const fy = item.y * h + shiftY;
 
         ctx.save();
         ctx.translate(fx, fy);
 
-        // 地面投影
-        ctx.fillStyle = 'rgba(2, 6, 23, 0.55)';
+        // 柔和暖棕地面阴影
+        ctx.fillStyle = 'rgba(92, 61, 38, 0.22)';
         ctx.beginPath();
-        ctx.ellipse(0, 22, 34, 10, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 36, 46, 13, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        if (item.interactiveTag === 'desk') {
-          // 双屏极客工作台 (像素风)
-          ctx.fillStyle = '#334155';
-          ctx.fillRect(-36, 0, 72, 10);
-          ctx.fillStyle = '#1e293b';
-          ctx.fillRect(-30, 10, 8, 16);
-          ctx.fillRect(22, 10, 8, 16);
-          // 双显示器
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(-30, -24, 28, 20);
-          ctx.fillRect(2, -24, 28, 20);
-          ctx.fillStyle = '#22d3ee';
-          ctx.fillRect(-28, -22, 24, 16);
-          ctx.fillStyle = '#a855f7';
-          ctx.fillRect(4, -22, 24, 16);
-          // 屏幕代码闪烁条
-          ctx.fillStyle = '#f8fafc';
-          const codeOffset = Math.floor(tick / 8) % 3;
-          ctx.fillRect(-25, -19 + codeOffset * 4, 14, 2);
-          ctx.fillRect(7, -17 + codeOffset * 3, 16, 2);
-        } else if (item.interactiveTag === 'bed') {
-          // 云朵像素睡眠舱
-          ctx.fillStyle = '#475569';
-          ctx.fillRect(-38, -6, 76, 24);
-          ctx.fillStyle = '#f472b6';
-          ctx.fillRect(-34, -2, 68, 18);
-          ctx.fillStyle = '#f8fafc';
-          ctx.fillRect(-30, -10, 22, 10); // 枕头
-        } else if (item.interactiveTag === 'vending') {
-          // 霓虹快乐水售货机
-          ctx.fillStyle = '#e11d48';
-          ctx.fillRect(-24, -44, 48, 64);
-          ctx.fillStyle = '#0f172a';
-          ctx.fillRect(-18, -38, 36, 34);
-          // 像素可乐罐阵列
-          ctx.fillStyle = '#38bdf8';
-          ctx.fillRect(-14, -32, 6, 10);
-          ctx.fillStyle = '#fb7185';
-          ctx.fillRect(-3, -32, 6, 10);
-          ctx.fillStyle = '#facc15';
-          ctx.fillRect(8, -32, 6, 10);
-          ctx.fillStyle = '#4ade80';
-          ctx.fillRect(-14, -18, 6, 10);
-          ctx.fillStyle = '#c084fc';
-          ctx.fillRect(-3, -18, 6, 10);
-        } else if (item.interactiveTag === 'music') {
-          // 治愈八音盒留声机
-          ctx.fillStyle = '#78350f';
-          ctx.fillRect(-20, -24, 40, 40);
-          ctx.fillStyle = '#fbbf24';
-          ctx.beginPath();
-          ctx.arc(0, -12, 12, 0, Math.PI * 2);
-          ctx.fill();
-          if (isMusicPlaying) {
-            const noteY = -34 - ((tick * 0.6) % 18);
-            ctx.fillStyle = '#22d3ee';
-            ctx.font = 'bold 14px monospace';
-            ctx.fillText('♪', -10 + Math.sin(tick * 0.1) * 8, noteY);
-            ctx.fillStyle = '#f472b6';
-            ctx.fillText('♫', 8 + Math.cos(tick * 0.1) * 6, noteY - 6);
+        const furnSprites = assets?.furnitureSprites;
+        let spriteCanvas: HTMLCanvasElement | null = null;
+        let drawW = 112;
+        let drawH = 112;
+
+        if (item.interactiveTag === 'desk' && furnSprites?.desk) {
+          spriteCanvas = furnSprites.desk;
+          drawW = 128;
+          drawH = 116;
+        } else if (item.interactiveTag === 'bed' && furnSprites?.bed) {
+          spriteCanvas = furnSprites.bed;
+          drawW = 136;
+          drawH = 118;
+        } else if (item.interactiveTag === 'vending' && furnSprites?.vending) {
+          spriteCanvas = furnSprites.vending;
+          drawW = 110;
+          drawH = 118;
+        } else if (item.interactiveTag === 'music' && furnSprites?.music) {
+          spriteCanvas = furnSprites.music;
+          drawW = 104;
+          drawH = 108;
+        } else if (item.interactiveTag === 'arcade' && furnSprites?.arcade) {
+          spriteCanvas = furnSprites.arcade;
+          drawW = 106;
+          drawH = 116;
+        } else if (item.interactiveTag === 'plant' && furnSprites?.plant) {
+          spriteCanvas = furnSprites.plant;
+          drawW = 112;
+          drawH = 112;
+        }
+
+        if (spriteCanvas) {
+          // 轻微呼吸动效
+          const floatOffset =
+            item.interactiveTag === 'music' && isMusicPlaying
+              ? Math.sin(tick * 0.18) * 3
+              : 0;
+          ctx.drawImage(
+            spriteCanvas,
+            -drawW / 2,
+            -drawH / 2 - 8 + floatOffset,
+            drawW,
+            drawH
+          );
+
+          // 八音盒播放时的飘动音符特效
+          if (item.interactiveTag === 'music' && isMusicPlaying) {
+            const noteY = -52 - ((tick * 0.7) % 24);
+            ctx.fillStyle = '#E07A5F';
+            ctx.font = 'bold 16px serif';
+            ctx.fillText('♪', -14 + Math.sin(tick * 0.12) * 8, noteY);
+            ctx.fillStyle = '#D97706';
+            ctx.fillText('♫', 12 + Math.cos(tick * 0.12) * 6, noteY - 8);
           }
-        } else if (item.interactiveTag === 'arcade') {
-          // 复古红白机街机台
-          ctx.fillStyle = '#4f46e5';
-          ctx.fillRect(-22, -42, 44, 62);
-          ctx.fillStyle = '#22d3ee';
-          ctx.fillRect(-16, -32, 32, 22);
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(-10, -4, 6, 4);
-          ctx.fillRect(4, -4, 6, 4);
-        } else if (item.interactiveTag === 'plant') {
-          // 呼吸感光像素绿植
-          ctx.fillStyle = '#d97706';
-          ctx.fillRect(-14, 2, 28, 18);
-          ctx.fillStyle = '#10b981';
-          ctx.fillRect(-18, -18, 36, 20);
-          ctx.fillStyle = '#34d399';
-          ctx.fillRect(-10, -28, 20, 12);
         } else if (item.isCustomPixel && item.customMatrix && item.customPalette) {
-          // AI 像素工坊生成的 12x12 专属像素物品
-          const pSize = 3.5;
+          // AI 造物工坊生成的精致像素礼物带暖木底座展示
+          ctx.fillStyle = '#FFFDF9';
+          ctx.strokeStyle = '#D97742';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.roundRect(-30, -34, 60, 60, 12);
+          ctx.fill();
+          ctx.stroke();
+
+          const pSize = 4;
           const offset = (12 * pSize) / 2;
           item.customMatrix.forEach((row, rIdx) => {
             row.forEach((colorIdx, cIdx) => {
               if (colorIdx > 0) {
-                ctx.fillStyle = item.customPalette![colorIdx] || '#38bdf8';
+                ctx.fillStyle = item.customPalette![colorIdx] || '#E07A5F';
                 ctx.fillRect(
                   cIdx * pSize - offset,
-                  rIdx * pSize - offset - 6,
-                  pSize + 0.4,
-                  pSize + 0.4
+                  rIdx * pSize - offset - 4,
+                  pSize + 0.3,
+                  pSize + 0.3
                 );
               }
             });
           });
         }
 
-        // 家具悬浮标签
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
-        ctx.fillRect(-38, 24, 76, 15);
-        ctx.fillStyle = '#cbd5e1';
-        ctx.font = '10px sans-serif';
+        // 温馨奶油标签牌
+        ctx.font = 'bold 11px sans-serif';
+        const labelText = item.name.slice(0, 8);
+        const lw = ctx.measureText(labelText).width + 16;
+        ctx.fillStyle = 'rgba(255, 252, 245, 0.92)';
+        ctx.strokeStyle = '#D4B895';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.roundRect(-lw / 2, 34, lw, 18, 9);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#5C4028';
         ctx.textAlign = 'center';
-        ctx.fillText(item.name.slice(0, 7), 0, 35);
+        ctx.fillText(labelText, 0, 47);
 
         ctx.restore();
       };
 
-      // 先画在小人后方的家具
-      sortedFurniture.filter((f) => f.y <= av.y).forEach(drawFurnitureItem);
+      // 先绘制在小人后方的家具
+      sortedFurniture.filter((f) => f.y <= av.y).forEach(drawFurnitureSprite);
 
-      // 6. 绘制程序化像素赛博数字人分身 (Avatar Sprite State Machine)
+      // 5. 绘制 32-Bit 精绘像素数字人分身 (Chibi Pixel Character Sprite State Machine)
       const avDepth = (av.y - 0.35) / 0.55;
-      const avScreenX = av.x * w - px * (0.7 - avDepth * 0.55);
-      const avScreenY = av.y * h - py * (0.7 - avDepth * 0.55);
-      const isMoving = dist > 0.015;
-      const bounceY = isMoving
-        ? Math.abs(Math.sin(tick * 0.28)) * -7
-        : currentAction === 'dance'
-        ? Math.abs(Math.sin(tick * 0.35)) * -9
-        : Math.sin(tick * 0.08) * -2;
+      const avScreenX = av.x * w - px * (0.68 - avDepth * 0.45);
+      const avScreenY = av.y * h - py * (0.68 - avDepth * 0.45);
+      const isMoving = dist > 0.014;
+      const walkBounceY = isMoving
+        ? Math.abs(Math.sin(tick * 0.26)) * -9
+        : Math.sin(tick * 0.07) * -2.5;
+      const walkTilt = isMoving ? Math.sin(tick * 0.26) * 0.06 : 0;
 
       ctx.save();
       ctx.translate(avScreenX, avScreenY);
 
-      // 小人脚下全息光环
-      ctx.strokeStyle = persona.accentColor;
-      ctx.lineWidth = 2;
+      // 脚下温暖阳光光环
+      ctx.fillStyle = 'rgba(224, 122, 95, 0.24)';
       ctx.beginPath();
-      ctx.ellipse(0, 26, 22, 7, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 42, 34, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#E07A5F';
+      ctx.lineWidth = 2;
       ctx.stroke();
 
-      ctx.translate(0, bounceY);
-      if (av.facing === 'left') {
-        ctx.scale(-1, 1);
+      ctx.translate(0, walkBounceY);
+      ctx.rotate(walkTilt);
+
+      // 根据当前动作与人设选择最匹配的 32-Bit 精绘角色精灵
+      const charSprites = assets?.characterSprites;
+      let activeCharSprite = charSprites?.idleWave || null;
+      if (currentAction === 'work_code' && charSprites?.workCoding) {
+        activeCharSprite = charSprites.workCoding;
+      } else if (currentAction === 'sleep' && charSprites?.sleepCloud) {
+        activeCharSprite = charSprites.sleepCloud;
+      } else if (
+        (currentAction === 'drink_cola' || persona.avatarStyle === 'healing_artist') &&
+        charSprites?.drinkSoda
+      ) {
+        activeCharSprite = charSprites.drinkSoda;
       }
 
-      // 像素级身体绘制 (4px 网格单元)
-      const u = 4;
-      // 头发后层
-      ctx.fillStyle = persona.hairColor;
-      ctx.fillRect(-5 * u, -12 * u, 10 * u, 6 * u);
-      // 脸部皮肤
-      ctx.fillStyle = '#fde68a';
-      ctx.fillRect(-4 * u, -9 * u, 8 * u, 5 * u);
-      // 刘海与赛博耳机
-      ctx.fillStyle = persona.hairColor;
-      ctx.fillRect(-4 * u, -11 * u, 8 * u, 2.5 * u);
-      ctx.fillStyle = persona.accentColor;
-      ctx.fillRect(-5.5 * u, -9 * u, 1.5 * u, 4 * u);
-      ctx.fillRect(4 * u, -9 * u, 1.5 * u, 4 * u);
-
-      // 眼睛（支持眨眼、睡觉闭眼、开心弯眼）
-      const isBlinking = tick % 110 < 6 || currentAction === 'sleep';
-      ctx.fillStyle = '#0f172a';
-      if (isBlinking) {
-        ctx.fillRect(-2.5 * u, -6.5 * u, 1.8 * u, 0.6 * u);
-        ctx.fillRect(1.2 * u, -6.5 * u, 1.8 * u, 0.6 * u);
-      } else {
-        ctx.fillRect(-2.5 * u, -7.2 * u, 1.5 * u, 1.8 * u);
-        ctx.fillRect(1.2 * u, -7.2 * u, 1.5 * u, 1.8 * u);
-        // 眼神高光
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(-2.2 * u, -7.0 * u, 0.6 * u, 0.6 * u);
-        ctx.fillRect(1.5 * u, -7.0 * u, 0.6 * u, 0.6 * u);
+      if (activeCharSprite) {
+        ctx.save();
+        if (av.facing === 'left' && currentAction !== 'work_code' && currentAction !== 'sleep') {
+          ctx.scale(-1, 1);
+        }
+        const spriteW = 132;
+        const spriteH = 132;
+        ctx.drawImage(activeCharSprite, -spriteW / 2, -spriteH / 2 - 14, spriteW, spriteH);
+        ctx.restore();
       }
-
-      // 身体穿搭
-      ctx.fillStyle = persona.outfitColor;
-      ctx.fillRect(-3.5 * u, -4 * u, 7 * u, 6 * u);
-      ctx.fillStyle = persona.accentColor;
-      ctx.fillRect(-1.5 * u, -3 * u, 3 * u, 4 * u);
-
-      // 手臂动作（敲代码 / 喝可乐 / 挥手）
-      const armSwing = isMoving || currentAction === 'work_code' ? Math.sin(tick * 0.4) * 4 : 0;
-      ctx.fillStyle = persona.outfitColor;
-      ctx.fillRect(-5 * u, -3.5 * u + armSwing * 0.3, 1.5 * u, 4.5 * u);
-      ctx.fillRect(3.5 * u, -3.5 * u - armSwing * 0.3, 1.5 * u, 4.5 * u);
-
-      if (currentAction === 'drink_cola') {
-        // 手持像素可乐罐
-        ctx.fillStyle = '#ef4444';
-        ctx.fillRect(4 * u, -5 * u, 2 * u, 3 * u);
-      }
-
-      // 迈腿走路帧
-      const legStride = isMoving ? Math.sin(tick * 0.35) * 5 : 0;
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(-2.8 * u, 2 * u + legStride * 0.4, 2 * u, 3.5 * u);
-      ctx.fillRect(0.8 * u, 2 * u - legStride * 0.4, 2 * u, 3.5 * u);
 
       ctx.restore();
 
       // 绘制在小人前方的家具
-      sortedFurniture.filter((f) => f.y > av.y).forEach(drawFurnitureItem);
+      sortedFurniture.filter((f) => f.y > av.y).forEach(drawFurnitureSprite);
 
-      // 7. 绘制小人头顶状态气泡与打工金币飘字
+      // 6. 绘制小人头顶治愈系奶油气泡框
       ctx.save();
-      ctx.translate(avScreenX, avScreenY + bounceY - 58);
+      ctx.translate(avScreenX, avScreenY + walkBounceY - 82);
 
-      let statusBadge = emoteBubble || '✨ 陪伴中';
+      let statusBadge = emoteBubble || '☀️ 暖心陪伴中';
       if (currentAction === 'work_code') {
-        statusBadge = `💻 赛博打工中 (+${persona.hourlyWage}币/h)`;
+        statusBadge = `💻 认真写代码打工 (+${persona.hourlyWage}币/h)`;
       } else if (currentAction === 'drink_cola') {
-        statusBadge = '🥤 吨吨吨喝冰可乐~';
+        statusBadge = '🍓 吨吨吨喝冰镇草莓汽水~';
       } else if (currentAction === 'sleep') {
-        statusBadge = '💤 Zzz 睡眠舱充电中...';
+        statusBadge = '☁️ 云朵垫午睡充电中 Zzz';
       } else if (currentAction === 'interact_ui') {
-        statusBadge = '⚡ 飞踢右侧逾期日程卡！';
+        statusBadge = '👟 跑去右边踢醒逾期便签！';
       } else if (currentAction === 'look_at_camera') {
-        statusBadge = '👀 贴在玻璃窗看主人';
+        statusBadge = '👀 趴在窗前看主人~';
       } else if (currentAction === 'play_music') {
-        statusBadge = '🎵 播放治愈八音盒';
+        statusBadge = '🎵 摇动留声机放治愈音乐';
       }
 
-      ctx.font = 'bold 11px sans-serif';
-      const textWidth = ctx.measureText(statusBadge).width;
-      const boxW = textWidth + 18;
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-      ctx.strokeStyle = persona.accentColor;
-      ctx.lineWidth = 1.2;
+      ctx.font = 'bold 12px sans-serif';
+      const tw = ctx.measureText(statusBadge).width;
+      const bw = tw + 24;
+      ctx.fillStyle = '#FFFDF9';
+      ctx.strokeStyle = '#E07A5F';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.roundRect(-boxW / 2, -14, boxW, 22, 8);
+      ctx.roundRect(-bw / 2, -16, bw, 26, 13);
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = '#f8fafc';
+      ctx.fillStyle = '#4A3525';
       ctx.textAlign = 'center';
       ctx.fillText(statusBadge, 0, 1);
       ctx.restore();
 
-      // 8. 前置玻璃窗边框高光（营造“被关在透明立体玻璃盒子”的质感）
-      const glassGrad = ctx.createLinearGradient(0, 0, w, h);
-      glassGrad.addColorStop(0, 'rgba(255, 255, 255, 0.04)');
-      glassGrad.addColorStop(0.5, 'rgba(56, 189, 248, 0.01)');
-      glassGrad.addColorStop(1, 'rgba(255, 255, 255, 0.05)');
-      ctx.fillStyle = glassGrad;
-      ctx.fillRect(0, 0, w, h);
+      // 7. 阳光微尘粒子与昼夜温馨光影滤镜 (Sunbeam Dust & Time-of-Day Filter)
+      ctx.save();
+      dustMotes.forEach((m) => {
+        m.y -= m.speedY;
+        if (m.y < 0.08) m.y = 0.88;
+        const mx = m.x * w + Math.sin(tick * 0.02 + m.phase) * 14 - px * 0.3;
+        const my = m.y * h - py * 0.3;
+        const alpha = 0.35 + Math.sin(tick * 0.05 + m.phase) * 0.25;
+        ctx.fillStyle =
+          lightingMode === 'night'
+            ? `rgba(253, 224, 71, ${alpha})`
+            : `rgba(255, 247, 214, ${alpha + 0.15})`;
+        ctx.beginPath();
+        ctx.arc(mx, my, m.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      if (lightingMode === 'sunset') {
+        ctx.fillStyle = 'rgba(234, 88, 12, 0.12)';
+        ctx.fillRect(0, 0, w, h);
+      } else if (lightingMode === 'night') {
+        ctx.fillStyle = 'rgba(30, 27, 75, 0.28)';
+        ctx.fillRect(0, 0, w, h);
+      }
+      ctx.restore();
 
       animId = requestAnimationFrame(renderLoop);
     };
@@ -477,17 +414,17 @@ export const CyberRoomCanvas: React.FC<CyberRoomCanvasProps> = ({
     targetCoord,
     emoteBubble,
     isMusicPlaying,
+    assetsReady,
+    lightingMode,
   ]);
 
-  // 支持鼠标在画布上移动产生 2.5D 裸眼视差，以及拖拽家具摆放
   const handlePointerDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
 
-    // 检查是否点中了某个家具（支持自由拖拽摆放）
     const hitFurniture = placedItems.find(
-      (f) => Math.hypot(f.x - nx, f.y - ny) < 0.075
+      (f) => Math.hypot(f.x - nx, f.y - ny) < 0.085
     );
     if (hitFurniture) {
       draggingIdRef.current = hitFurniture.id;
@@ -495,17 +432,16 @@ export const CyberRoomCanvas: React.FC<CyberRoomCanvasProps> = ({
       return;
     }
 
-    // 检查是否点击了赛博小人本体
     const av = avatarPosRef.current;
-    if (Math.hypot(av.x - nx, av.y - ny) < 0.09) {
+    if (Math.hypot(av.x - nx, av.y - ny) < 0.11) {
       onAvatarClick();
     }
   };
 
   const handlePointerMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const nx = Math.max(0.08, Math.min(0.92, (e.clientX - rect.left) / rect.width));
-    const ny = Math.max(0.38, Math.min(0.84, (e.clientY - rect.top) / rect.height));
+    const nx = Math.max(0.1, Math.min(0.9, (e.clientX - rect.left) / rect.width));
+    const ny = Math.max(0.42, Math.min(0.84, (e.clientY - rect.top) / rect.height));
 
     if (draggingIdRef.current) {
       onMoveFurniture(draggingIdRef.current, nx, ny);
@@ -525,99 +461,140 @@ export const CyberRoomCanvas: React.FC<CyberRoomCanvasProps> = ({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-cyan-500/30 bg-slate-950 shadow-2xl">
-      {/* 顶部悬浮 HUD：房间模式切换 + 八音盒开关 */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <span className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900/85 border border-cyan-500/30 px-3 py-1 text-xs font-semibold text-cyan-300 backdrop-blur-md">
-            <Eye className="h-3.5 w-3.5 text-cyan-400" />
-            2.5D 视差玻璃箱庭 · 拖拽家具可自由摆位
+    <div className="flex flex-col rounded-2xl border-2 border-[#E2D0BA] bg-[#FFFDF9] shadow-md overflow-hidden">
+      {/* 顶部温馨工具条：光影氛围切换 + 空白小屋/样板间 + 留声机开关 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EDE0D0] bg-[#FAF3E8] px-3.5 py-2">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#FFFDF9] border border-[#DFCBB2] px-2.5 py-1 text-xs font-bold text-[#6E4F35] shadow-sm">
+            <Eye className="h-3.5 w-3.5 text-[#E07A5F]" />
+            32-Bit 精绘阳光箱庭 · 可直接拖拽家具或点击小人互动
           </span>
           {draggingName && (
-            <span className="rounded-lg bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-xs text-amber-300">
-              正在移动：{draggingName}
+            <span className="rounded-lg bg-[#FDE68A] border border-[#F59E0B]/40 px-2 py-0.5 text-xs font-bold text-[#92400E]">
+              正在摆放：{draggingName}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5 pointer-events-auto">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* 昼夜光影切换器 (Spirit City 风格) */}
+          <div className="flex items-center rounded-xl border border-[#DFCBB2] bg-[#FFFDF9] p-0.5">
+            <button
+              type="button"
+              onClick={() => setLightingMode('sunlit')}
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition ${
+                lightingMode === 'sunlit'
+                  ? 'bg-[#FDE68A]/70 text-[#92400E]'
+                  : 'text-[#8A725E] hover:text-[#4A3525]'
+              }`}
+            >
+              <Sun className="h-3 w-3" />
+              暖阳
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightingMode('sunset')}
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition ${
+                lightingMode === 'sunset'
+                  ? 'bg-[#FDBA74]/60 text-[#9A3412]'
+                  : 'text-[#8A725E] hover:text-[#4A3525]'
+              }`}
+            >
+              <Sunset className="h-3 w-3" />
+              晚霞
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightingMode('night')}
+              className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition ${
+                lightingMode === 'night'
+                  ? 'bg-[#C7D2FE]/70 text-[#3730A3]'
+                  : 'text-[#8A725E] hover:text-[#4A3525]'
+              }`}
+            >
+              <Moon className="h-3 w-3" />
+              夜灯
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={onResetEmptyRoom}
-            className="flex items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/85 px-2.5 py-1 text-xs text-slate-300 hover:border-rose-400/50 hover:text-rose-300 transition backdrop-blur-md"
-            title="清空所有家具，体验从一片空白开始布置家园"
+            className="flex items-center gap-1 rounded-xl border border-[#DFCBB2] bg-[#FFFDF9] px-2.5 py-1 text-xs font-medium text-[#6E4F35] hover:bg-[#F5EBE0] transition"
+            title="收起所有可移动家具，从空白地毯开始自由布置"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
-            空白小屋初始态
+            <RotateCcw className="h-3.5 w-3.5 text-[#E07A5F]" />
+            清空家具
           </button>
           <button
             type="button"
             onClick={onRestoreDefaultRoom}
-            className="flex items-center gap-1 rounded-xl border border-slate-700/80 bg-slate-900/85 px-2.5 py-1 text-xs text-slate-300 hover:border-cyan-400/50 hover:text-cyan-300 transition backdrop-blur-md"
+            className="flex items-center gap-1 rounded-xl border border-[#DFCBB2] bg-[#FFFDF9] px-2.5 py-1 text-xs font-medium text-[#6E4F35] hover:bg-[#F5EBE0] transition"
           >
-            <Home className="h-3.5 w-3.5" />
-            一键布置样板间
+            <Home className="h-3.5 w-3.5 text-[#6B9E78]" />
+            温馨样板间
           </button>
           <button
             type="button"
             onClick={onToggleMusic}
-            className={`flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-medium transition backdrop-blur-md ${
+            className={`flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-bold transition ${
               isMusicPlaying
-                ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-300'
-                : 'border-slate-700/80 bg-slate-900/85 text-slate-300 hover:text-white'
+                ? 'border-[#6B9E78] bg-[#E8F3EA] text-[#2F6B40]'
+                : 'border-[#DFCBB2] bg-[#FFFDF9] text-[#6E4F35] hover:bg-[#F5EBE0]'
             }`}
           >
             {isMusicPlaying ? (
               <>
-                <Volume2 className="h-3.5 w-3.5 animate-bounce" />
-                八音盒演奏中
+                <Volume2 className="h-3.5 w-3.5 animate-bounce text-[#6B9E78]" />
+                留声机演奏中
               </>
             ) : (
               <>
                 <VolumeX className="h-3.5 w-3.5" />
-                八音盒静音
+                开启留声机
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* 核心 2.5D 像素箱庭 Canvas */}
-      <canvas
-        ref={canvasRef}
-        width={760}
-        height={420}
-        onMouseDown={handlePointerDown}
-        onMouseMove={handlePointerMove}
-        onMouseUp={handlePointerUp}
-        onMouseLeave={handlePointerUp}
-        className="w-full h-[390px] sm:h-[420px] block cursor-grab active:cursor-grabbing"
-      />
+      {/* 核心 32-Bit 精绘像素箱庭 Canvas */}
+      <div className="relative bg-[#F5E6D3]">
+        <canvas
+          ref={canvasRef}
+          width={860}
+          height={460}
+          onMouseDown={handlePointerDown}
+          onMouseMove={handlePointerMove}
+          onMouseUp={handlePointerUp}
+          onMouseLeave={handlePointerUp}
+          className="pixel-canvas w-full h-[360px] xl:h-[395px] block cursor-grab active:cursor-grabbing"
+        />
+      </div>
 
-      {/* 底部：赛博分身实时语音气泡 + 大模型内部思考链可视化 (Inner Monologue) */}
-      <div className="border-t border-slate-800/90 bg-slate-900/95 px-4 py-3 backdrop-blur-md">
+      {/* 底部：温馨手账风对话栏 + 大模型内部思考链可视化 */}
+      <div className="border-t border-[#EDE0D0] bg-[#FAF4EB] px-4 py-2.5">
         <div className="flex items-start gap-3">
-          <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border text-xs font-bold text-slate-950 shadow-md"
-            style={{
-              backgroundColor: persona.accentColor,
-              borderColor: persona.hairColor,
-            }}
-          >
-            Lv.{persona.level}
+          <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-xl bg-[#E07A5F] text-white font-extrabold text-xs shadow-sm">
+            <span>Lv.{persona.level}</span>
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white">{persona.name}</span>
-              <span className="rounded bg-cyan-500/15 px-1.5 py-0.5 font-mono text-[10px] text-cyan-300 border border-cyan-500/25">
-                动作指令: {currentAction}
+              <span className="text-xs font-extrabold text-[#4A3525]">{persona.name}</span>
+              <span className="rounded-full bg-[#EFE5D8] px-2 py-0.5 text-[10px] font-semibold text-[#7C5D41]">
+                {persona.title}
+              </span>
+              <span className="rounded-full bg-[#E8F3EA] px-2 py-0.5 font-mono text-[10px] font-bold text-[#3B7A4B]">
+                动作状态: {currentAction}
               </span>
             </div>
-            <p className="text-sm text-slate-100 mt-1 leading-relaxed">{speechText}</p>
-            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
-              <Sparkles className="h-3 w-3 text-purple-400 shrink-0" />
+            <p className="text-xs sm:text-sm font-medium text-[#3D2E24] mt-1 leading-relaxed">
+              “{speechText}”
+            </p>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-[#8A725E]">
+              <Sparkles className="h-3.5 w-3.5 text-[#D97742] shrink-0" />
               <span className="truncate">
-                <strong className="text-purple-300">大脑思维链 (Inner Thought)：</strong>
+                <strong className="text-[#6E4F35]">分身内心OS (Inner Thought)：</strong>
                 {innerThought}
               </span>
             </div>

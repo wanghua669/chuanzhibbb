@@ -1,11 +1,14 @@
 {
-  "name": "cybertwin-box",
+  "name": "cybertwin-cozy-studio",
   "private": true,
-  "version": "1.0.0",
-  "description": "CyberTwin Box (赛博伴生) - 数据驱动的成长型赛博数字人分身与2.5D视差具身箱庭系统",
+  "version": "2.0.0",
+  "description": "CyberTwin Cozy Studio (赛博伴生桌面端) - 数据驱动的成长型赛博数字人分身与32-Bit精绘阳光箱庭软件",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host",
+    "app": "node scripts/launch-desktop.mjs",
+    "desktop": "node scripts/launch-desktop.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Sparkles,
   Database,
   Key,
   Send,
@@ -12,6 +11,14 @@ import {
   Coffee,
   Footprints,
   Eye,
+  Maximize2,
+  Minimize2,
+  Timer,
+  Play,
+  RotateCcw,
+  Home,
+  Sparkles,
+  Volume2,
 } from 'lucide-react';
 import {
   PersonaProfile,
@@ -42,7 +49,7 @@ import { PersonaForgeModal } from './components/PersonaForgeModal';
 import { ApiConfigModal } from './components/ApiConfigModal';
 
 export const App: React.FC = () => {
-  // 1. 成长型赛博分身状态 & 本地持久化
+  // 1. 成长型赛博分身状态
   const [persona, setPersona] = useState<PersonaProfile>(() => {
     try {
       const saved = localStorage.getItem('cybertwin_persona_v1');
@@ -63,7 +70,7 @@ export const App: React.FC = () => {
   // 3. 小人回馈主人的礼物匣
   const [gifts, setGifts] = useState<CyberGiftItem[]>(INITIAL_CYBER_GIFTS);
 
-  // 4. 大模型 API 配置（预留接口 + 双模切换）
+  // 4. 大模型 API 配置
   const [llmConfig, setLlmConfig] = useState<LLMConfig>(() => loadLLMConfig());
 
   // 5. 前置摄像头落地窗 & 2.5D 裸眼视差坐标
@@ -74,20 +81,20 @@ export const App: React.FC = () => {
     headY: 0,
     headZ: 1.0,
     userExpression: 'focused',
-    expressionLabel: '专注陪伴中 💻',
-    brightness: 128,
-    lastVisionSummary: '主人正在屏幕前专注探索 CyberTwin Box 赛博伴生箱庭系统',
+    expressionLabel: '温暖陪伴中 ☀️',
+    brightness: 145,
+    lastVisionSummary: '主人正在阳光书房桌面端与赛博分身互动',
   });
 
   // 6. 赛博分身“身体执行层”状态机
   const [currentAction, setCurrentAction] = useState<BrainActionType>('sit');
-  const [targetCoord, setTargetCoord] = useState<{ x: number; y: number }>({ x: 0.28, y: 0.56 });
-  const [emoteBubble, setEmoteBubble] = useState<string>('✨ 逻辑闭环了~');
+  const [targetCoord, setTargetCoord] = useState<{ x: number; y: number }>({ x: 0.48, y: 0.66 });
+  const [emoteBubble, setEmoteBubble] = useState<string>('☀️ 逻辑闭环了~');
   const [speechText, setSpeechText] = useState<string>(
-    '你好呀主人！我是基于你的个人语料与笔记生长出来的赛博分身「星野零」。试着晃动鼠标或开启摄像头看看我们的 2.5D 玻璃房视差吧！'
+    '欢迎回到我们的阳光木屋桌面端！我已经换上了精绘的 32-Bit 像素房间与装扮，随时陪你一起专注学习或打工赚钱~'
   );
   const [innerThought, setInnerThought] = useState<string>(
-    '已完成初始个人语料加载与六维人格建档，等待主人指令或进入 Heartbeat 自主打工循环。'
+    '已加载个人语料记忆与 32-Bit 精绘像素图层，开启温暖伴学/伴工守护循环。'
   );
   const [brainSource, setBrainSource] = useState<'cloud_llm' | 'heuristic_engine'>('heuristic_engine');
   const [isThinking, setIsThinking] = useState(false);
@@ -95,13 +102,19 @@ export const App: React.FC = () => {
   const [kickingTaskId, setKickingTaskId] = useState<string | null>(null);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
 
+  // 7. 桌面客户端专属模式：完整工作台 (studio) vs 迷你桌宠挂件 (mini_widget)
+  const [windowMode, setWindowMode] = useState<'studio' | 'mini_widget'>('studio');
+
+  // 8. 内置伴学番茄钟 (Spirit City / Virtual Cottage 经典生产力组件)
+  const [pomoSeconds, setPomoSeconds] = useState(25 * 60);
+  const [pomoRunning, setPomoRunning] = useState(false);
+
   // 弹窗开关
   const [isForgeOpen, setIsForgeOpen] = useState(false);
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
 
   const actionQueueTimerRef = useRef<number | null>(null);
 
-  // 自动保存分身与房间状态
   useEffect(() => {
     try {
       localStorage.setItem('cybertwin_persona_v1', JSON.stringify(persona));
@@ -114,21 +127,42 @@ export const App: React.FC = () => {
     } catch {}
   }, [furniture]);
 
-  // 根据语义目标名解算房间 2.5D 归一化坐标
+  // 伴学番茄钟计时器
+  useEffect(() => {
+    if (!pomoRunning) return;
+    const t = window.setInterval(() => {
+      setPomoSeconds((prev) => {
+        if (prev <= 1) {
+          setPomoRunning(false);
+          soundEngine.playGiftDropSound();
+          return 25 * 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [pomoRunning]);
+
+  const formatPomo = (sec: number) => {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   const resolveTargetCoordinates = useCallback(
     (targetName?: string): { x: number; y: number } => {
       const placed = furniture.filter((f) => f.placed);
       if (targetName === 'desk') {
         const desk = placed.find((f) => f.interactiveTag === 'desk');
-        if (desk) return { x: desk.x, y: desk.y + 0.05 };
+        if (desk) return { x: desk.x, y: desk.y + 0.04 };
       }
       if (targetName === 'bed') {
         const bed = placed.find((f) => f.interactiveTag === 'bed');
-        if (bed) return { x: bed.x, y: bed.y + 0.03 };
+        if (bed) return { x: bed.x, y: bed.y + 0.02 };
       }
       if (targetName === 'vending' || targetName === 'vending_machine') {
         const vend = placed.find((f) => f.interactiveTag === 'vending');
-        if (vend) return { x: vend.x, y: vend.y + 0.08 };
+        if (vend) return { x: vend.x, y: vend.y + 0.06 };
       }
       if (targetName === 'music') {
         const mus = placed.find((f) => f.interactiveTag === 'music');
@@ -139,19 +173,16 @@ export const App: React.FC = () => {
         if (arc) return { x: arc.x - 0.04, y: arc.y };
       }
       if (targetName === 'window_camera') {
-        // 走到屏幕正前方落地窗贴贴
-        return { x: 0.5, y: 0.78 };
+        return { x: 0.5, y: 0.74 };
       }
       if (targetName === 'ui_schedule') {
-        // 走到房间最右侧边缘，跨界去踢右侧的日程 UI 面板
-        return { x: 0.9, y: 0.62 };
+        return { x: 0.88, y: 0.64 };
       }
-      return { x: 0.48, y: 0.64 };
+      return { x: 0.48, y: 0.66 };
     },
     [furniture]
   );
 
-  // 执行跨界踢翻/震动右侧逾期日程卡片（只做前端 DOM 物理反馈，不破坏后端数据）
   const triggerCrossUiScheduleKick = useCallback(() => {
     soundEngine.playKickSound();
     setPersona((prev) => {
@@ -172,7 +203,6 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // 串行执行大模型返回的 JSON 动作指令序列 (Brain-Body Action Dispatcher)
   const executeActionSequence = useCallback(
     (actions: BrainActionCommand[]) => {
       if (actionQueueTimerRef.current) {
@@ -180,13 +210,13 @@ export const App: React.FC = () => {
       }
 
       const emojiMap: Record<string, string> = {
-        heart: '❤️ 好感度UP!',
-        bulb: '💡 灵感触发!',
-        coding: '💻 全速写代码中',
-        cola: '🥤 冰镇像素可乐!',
-        music: '🎵 治愈旋律~',
+        heart: '❤️ 羁绊升温!',
+        bulb: '💡 灵感闪现!',
+        coding: '💻 专注写代码中',
+        cola: '🍓 冰镇草莓汽水!',
+        music: '🎵 治愈留声机~',
         shock: '⚡ 发现目标!',
-        zzz: '💤 呼呼充电~',
+        zzz: '☁️ 云朵午睡中~',
       };
 
       actions.forEach((act, idx) => {
@@ -239,7 +269,6 @@ export const App: React.FC = () => {
     [resolveTargetCoordinates, triggerCrossUiScheduleKick]
   );
 
-  // 触发赛博大脑思考（支持用户对话、Heartbeat 自主心跳、摄像头表情事件、空投礼物事件）
   const triggerBrainCycle = useCallback(
     async (
       promptText: string,
@@ -284,7 +313,6 @@ export const App: React.FC = () => {
     [furniture, persona, cameraState, llmConfig, executeActionSequence]
   );
 
-  // Heartbeat 自主意识心跳定时器（无需用户下指令，小人自己也会自由走动、打工、买可乐、巡逻日程）
   useEffect(() => {
     if (!llmConfig.enableAutoHeartbeat) return;
     const intervalMs = Math.max(12, llmConfig.heartbeatIntervalSec) * 1000;
@@ -302,7 +330,6 @@ export const App: React.FC = () => {
     triggerBrainCycle(msg, 'user_chat');
   };
 
-  // 家具摆放与拖拽回调
   const handleToggleFurniture = (id: string) => {
     setFurniture((prev) =>
       prev.map((f) => (f.id === id ? { ...f, placed: !f.placed } : f))
@@ -324,7 +351,7 @@ export const App: React.FC = () => {
       affection: prev.affection + newItem.affectionBonus,
       exp: Math.min(99, prev.exp + 20),
     }));
-    triggerBrainCycle(`主人用 AI 像素工坊为我生成了专属礼物「${newItem.name}」并投放到了房间地板上！`, 'gift_drop');
+    triggerBrainCycle(`主人用 AI 像素工坊为我合成了礼物「${newItem.name}」并放进了阳光木屋！`, 'gift_drop');
   };
 
   const handleUnlockNewGift = () => {
@@ -332,12 +359,12 @@ export const App: React.FC = () => {
     const newDiary: CyberGiftItem = {
       id: `gift-${Date.now()}`,
       type: 'observation_diary',
-      title: `《赛博伴生观察日记 · 好感度 ${persona.affection} 纪念篇》`,
-      subtitle: `由 ${persona.name} 消耗 25 赛博币为你亲手撰写`,
+      title: `《阳光木屋陪伴手账 · 羁绊 ${persona.affection} 纪念篇》`,
+      subtitle: `由 ${persona.name} 消耗 25 币为你亲手写下`,
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       unlockedAtLevel: persona.level,
       costCoins: 25,
-      diaryContent: `亲爱的主人：\n\n这是我用刚刚在双屏电脑桌前敲代码赚来的赛博币为你写下的新日记！\n在我的记忆晶球里，已经珍藏了 ${persona.memories.length} 枚关于你的思想碎片。每次你移动视角或者在聊天框叫我，我的 2.5D 小屋都会亮起温暖的光。别忘了今天还要完成待办清单哦，实在不想做的话，我就再跑去右边帮你踢一脚卡片哈哈！—— 永远陪着你的 ${persona.name} (${persona.catchphrases[0] || '逻辑闭环了~'})`,
+      diaryContent: `亲爱的主人：\n\n这是我用刚刚在原木双屏桌前敲代码攒下的零花钱为你写的新手账！\n看着阳光透过木窗洒在地毯上，我的记忆匣里已经收集了 ${persona.memories.length} 枚关于你的温暖片段。今天也要记得按时完成软木板上的便签任务哦，要是累了就点一下留声机，我陪你听会儿歌~ —— 永远陪伴你的 ${persona.name}`,
     };
     setGifts((prev) => [newDiary, ...prev]);
     setPersona((prev) => ({
@@ -350,269 +377,464 @@ export const App: React.FC = () => {
   const cloudConfigured = isCloudApiKeyConfigured(llmConfig);
 
   return (
-    <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col">
-      {/* 顶部全局导航栏 */}
-      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 py-3">
-        <div className="mx-auto max-w-7xl flex flex-wrap items-center justify-between gap-3">
+    <div className="h-screen w-screen overflow-hidden bg-[#EFE5D8] p-1.5 sm:p-2.5 flex flex-col select-none">
+      {/* 桌面客户端软件主窗口壳体 (Native Desktop Application Window Frame) */}
+      <div className="flex-1 min-h-0 flex flex-col rounded-2xl border-2 border-[#D4B895] bg-[#FBF6EE] shadow-2xl overflow-hidden">
+        {/* 1. 原生桌面软件自定义标题栏 (Desktop Client Titlebar) */}
+        <header className="h-12 shrink-0 border-b border-[#E2D0BA] bg-[#F4E9DA] px-4 flex items-center justify-between gap-3">
+          {/* 左侧：桌面窗口红黄绿控制点 + 软件名称 */}
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-950 font-black text-base shadow-lg shadow-cyan-500/20">
-              CT
+            <div className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-full bg-[#E07A5F] border border-[#C85A3F] inline-block" />
+              <span className="h-3 w-3 rounded-full bg-[#F2CC8F] border border-[#D9A756] inline-block" />
+              <span className="h-3 w-3 rounded-full bg-[#81B29A] border border-[#5E947A] inline-block" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-white">
-                  CyberTwin Box · 赛博伴生
-                </h1>
-                <span className="rounded-full bg-cyan-500/15 border border-cyan-500/30 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-300">
-                  传智杯 Vibe Coding 参赛作品
-                </span>
+            <div className="h-4 w-[1px] bg-[#D4B895]" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#E07A5F] text-white font-black text-xs shadow-sm">
+                CT
               </div>
-              <p className="text-xs text-slate-400">
-                个人数据驱动的成长型赛博数字人分身 × 2.5D 裸眼视差具身箱庭系统
-              </p>
+              <span className="text-sm font-extrabold text-[#4A3525] tracking-tight">
+                CyberTwin Cozy Studio
+              </span>
+              <span className="hidden sm:inline-block rounded-md bg-[#FFFDF9] border border-[#D4B895] px-2 py-0.5 text-[10px] font-bold text-[#8C5A3C]">
+                Desktop Client v2.0 · 传智杯作品
+              </span>
             </div>
           </div>
 
-          {/* 右侧：分身成长数值 + 核心入口按钮 */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="hidden md:flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/90 px-3.5 py-1.5 text-xs">
-              <span className="flex items-center gap-1 text-rose-300 font-semibold">
-                <Heart className="h-3.5 w-3.5 text-rose-400 fill-rose-400" />
-                羁绊 {persona.affection}
+          {/* 中部：伴学番茄钟 + 桌面软件形态切换 (工作台模式 vs 迷你桌宠模式) */}
+          <div className="hidden lg:flex items-center gap-2.5">
+            <div className="flex items-center gap-1.5 rounded-xl border border-[#D4B895] bg-[#FFFDF9] px-2.5 py-1 text-xs">
+              <Timer className="h-3.5 w-3.5 text-[#E07A5F]" />
+              <span className="font-bold text-[#6E4F35]">伴学番茄钟</span>
+              <span className="font-mono font-extrabold text-[#4A3525] px-1">
+                {formatPomo(pomoSeconds)}
               </span>
-              <span className="text-slate-700">|</span>
-              <span className="flex items-center gap-1 text-amber-300 font-mono font-semibold">
-                <Coins className="h-3.5 w-3.5 text-amber-400" />
-                {persona.cyberCoins} 币
+              <button
+                type="button"
+                onClick={() => setPomoRunning(!pomoRunning)}
+                className="rounded-md bg-[#E07A5F] px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-[#D0694E]"
+              >
+                {pomoRunning ? '暂停' : '开始'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPomoRunning(false);
+                  setPomoSeconds(25 * 60);
+                }}
+                className="text-[#8A725E] hover:text-[#4A3525]"
+                title="重置番茄钟"
+              >
+                <RotateCcw className="h-3 w-3" />
+              </button>
+            </div>
+
+            <div className="flex items-center rounded-xl border border-[#D4B895] bg-[#FFFDF9] p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setWindowMode('studio')}
+                className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                  windowMode === 'studio'
+                    ? 'bg-[#E07A5F] text-white'
+                    : 'text-[#7C5D41] hover:text-[#4A3525]'
+                }`}
+              >
+                🏠 完整伴生工作台
+              </button>
+              <button
+                type="button"
+                onClick={() => setWindowMode('mini_widget')}
+                className={`rounded-lg px-2.5 py-1 font-bold transition ${
+                  windowMode === 'mini_widget'
+                    ? 'bg-[#6B9E78] text-white'
+                    : 'text-[#7C5D41] hover:text-[#4A3525]'
+                }`}
+              >
+                🐾 迷你桌宠挂件模式
+              </button>
+            </div>
+          </div>
+
+          {/* 右侧：分身状态胶囊 + 个人语料熔炉 + API 配置 */}
+          <div className="flex items-center gap-2">
+            <div className="hidden md:flex items-center gap-2.5 rounded-xl border border-[#D4B895] bg-[#FFFDF9] px-3 py-1 text-xs">
+              <span className="flex items-center gap-1 text-[#C84B31] font-bold">
+                <Heart className="h-3.5 w-3.5 text-[#E07A5F] fill-[#E07A5F]" />
+                {persona.affection}
               </span>
-              <span className="text-slate-700">|</span>
-              <span className="flex items-center gap-1 text-cyan-300 font-mono">
-                <Activity className="h-3.5 w-3.5 text-cyan-400" />
-                Lv.{persona.level} ({persona.exp}%)
+              <span className="text-[#E2D0BA]">|</span>
+              <span className="flex items-center gap-1 text-[#B45309] font-mono font-bold">
+                <Coins className="h-3.5 w-3.5 text-[#D97706]" />
+                {persona.cyberCoins}币
+              </span>
+              <span className="text-[#E2D0BA]">|</span>
+              <span className="flex items-center gap-1 text-[#2F6B40] font-mono font-bold">
+                <Activity className="h-3.5 w-3.5 text-[#6B9E78]" />
+                Lv.{persona.level}
               </span>
             </div>
 
             <button
               type="button"
               onClick={() => setIsForgeOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600/90 to-cyan-600/90 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-purple-500/20 hover:opacity-95 transition"
+              className="flex items-center gap-1.5 rounded-xl bg-[#E07A5F] px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-[#D0694E] transition"
             >
               <Database className="h-3.5 w-3.5" />
-              个人数据投喂 / 锻造分身
+              个人语料投喂
             </button>
 
             <button
               type="button"
               onClick={() => setIsApiModalOpen(true)}
-              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-bold transition ${
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
                 cloudConfigured
-                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                  : 'border-cyan-500/40 bg-slate-900 text-cyan-300 hover:bg-slate-800'
+                  ? 'border-[#6B9E78] bg-[#E8F3EA] text-[#2F6B40]'
+                  : 'border-[#D4B895] bg-[#FFFDF9] text-[#5C4028] hover:bg-[#F5EBE0]'
               }`}
             >
-              <Key className="h-3.5 w-3.5" />
-              {cloudConfigured ? '云端LLM已连接' : 'API密钥配置 (预留)'}
+              <Key className="h-3.5 w-3.5 text-[#E07A5F]" />
+              {cloudConfigured ? '云端LLM已连' : 'API配置(预留)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                  document.exitFullscreen().catch(() => {});
+                }
+              }}
+              className="rounded-lg border border-[#D4B895] bg-[#FFFDF9] p-1.5 text-[#6E4F35] hover:bg-[#F5EBE0]"
+              title="切换全屏桌面模式"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* 主工作区 */}
-      <main className="mx-auto w-full max-w-7xl flex-1 px-4 sm:px-6 py-4 space-y-4">
-        {/* 顶层：前置摄像头落地窗与裸眼 3D 视差控制栏 */}
-        <CameraPerceptionBar
-          cameraState={cameraState}
-          onUpdateCameraState={setCameraState}
-          onTriggerCameraEvent={(summary) =>
-            triggerBrainCycle(`摄像头感知到主人状态变化：${summary}`, 'camera_event')
-          }
-        />
-
-        {/* 核心双栏布局：左侧 7 列为 2.5D 玻璃房与指令台，右侧 5 列为跨界日程与数据记忆 */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* 左栏：2.5D 视差箱庭 + 意图驱动指令台 + 家园造物工坊 */}
-          <div className="lg:col-span-7 space-y-4">
-            <CyberRoomCanvas
-              persona={persona}
-              furniture={furniture}
-              cameraState={cameraState}
-              currentAction={currentAction}
-              targetCoord={targetCoord}
-              emoteBubble={emoteBubble}
-              speechText={speechText}
-              innerThought={innerThought}
-              isMusicPlaying={isMusicPlaying}
-              onToggleMusic={() => {
-                const next = soundEngine.toggleLofiMusicBox();
-                setIsMusicPlaying(next);
-              }}
-              onAvatarClick={() =>
-                triggerBrainCycle('主人在 2.5D 玻璃房里戳了戳我的脑袋跟打招呼！', 'user_chat')
-              }
-              onMoveFurniture={handleMoveFurniture}
-              onResetEmptyRoom={() =>
-                setFurniture((prev) => prev.map((f) => ({ ...f, placed: false })))
-              }
-              onRestoreDefaultRoom={() => setFurniture(INITIAL_FURNITURE_CATALOG)}
-              onMouseParallax={(nx, ny) =>
-                setCameraState((prev) => ({
-                  ...prev,
-                  headX: nx,
-                  headY: ny,
-                }))
-              }
-            />
-
-            {/* 大模型驱动动作指令台 (Brain-Body Command Console) */}
-            <div className="rounded-2xl border border-slate-800/90 bg-slate-900/80 p-3.5 backdrop-blur-md">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                <div className="flex items-center gap-2 text-xs">
-                  <Cpu className="h-4 w-4 text-cyan-400" />
-                  <span className="font-bold text-white">大模型意图驱动控制台 (Function Calling ➔ 身体动作)</span>
-                  <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
-                    {brainSource === 'cloud_llm' ? '云端大模型实时驱动' : '内置高拟真分身认知引擎'}
-                  </span>
-                </div>
-
-                {/* 快捷动作芯片 */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => triggerBrainCycle('快去双屏电脑桌前写代码打工赚赛博币吧！', 'user_chat')}
-                    className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-cyan-500/20 hover:text-cyan-300 px-2 py-1 text-[11px] text-slate-300 transition"
-                  >
-                    <Briefcase className="h-3 w-3" />
-                    去打工赚钱
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => triggerBrainCycle('去售货机买一罐冰镇像素可乐喝吧！', 'user_chat')}
-                    className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-rose-500/20 hover:text-rose-300 px-2 py-1 text-[11px] text-slate-300 transition"
-                  >
-                    <Coffee className="h-3 w-3" />
-                    买像素可乐
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => triggerBrainCycle('去右边帮我把逾期的日程卡片踢醒！', 'user_chat')}
-                    className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-amber-500/20 hover:text-amber-300 px-2 py-1 text-[11px] text-slate-300 transition"
-                  >
-                    <Footprints className="h-3 w-3" />
-                    踢醒逾期日程
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => triggerBrainCycle('走到前置摄像头玻璃窗前看看我！', 'camera_event')}
-                    className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 px-2 py-1 text-[11px] text-slate-300 transition"
-                  >
-                    <Eye className="h-3 w-3" />
-                    贴贴玻璃窗
-                  </button>
-                </div>
+        {/* 2. 软件主内容区：左侧停靠坞 (Dock Rail) + 分栏工作区 */}
+        <div className="flex-1 min-h-0 flex overflow-hidden">
+          {/* 左侧软件停靠栏 (Cozy App Sidebar Dock) */}
+          <aside className="w-16 sm:w-20 shrink-0 border-r border-[#E2D0BA] bg-[#F6EDE0] py-3 px-1.5 flex flex-col items-center justify-between">
+            <div className="flex flex-col items-center gap-2.5 w-full">
+              <div className="text-[10px] font-extrabold text-[#8A725E] tracking-wider">
+                伴生分身
               </div>
-
-              <form onSubmit={handleSendChat} className="flex gap-2">
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder={`和你的赛博分身「${persona.name}」对话，或指挥它在房间里自由走动、打工、休息...`}
-                  className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:border-cyan-400 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={isThinking}
-                  className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-2 text-xs font-bold text-slate-950 hover:from-cyan-400 hover:to-blue-500 transition disabled:opacity-50"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {isThinking ? '思考中...' : '发送指令'}
-                </button>
-              </form>
+              {PRESET_PERSONAS.map((p) => {
+                const isSelected = p.id === persona.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setPersona(p);
+                      setSpeechText(`切换至伴生分身「${p.name}」：${p.catchphrases[0]}`);
+                    }}
+                    className={`w-full rounded-xl p-1.5 flex flex-col items-center gap-1 border transition ${
+                      isSelected
+                        ? 'border-[#E07A5F] bg-[#FFFDF9] shadow-sm text-[#4A3525]'
+                        : 'border-transparent text-[#8A725E] hover:bg-[#EFE4D4]'
+                    }`}
+                  >
+                    <div
+                      className="h-7 w-7 rounded-lg flex items-center justify-center text-white font-extrabold text-xs shadow-sm"
+                      style={{ backgroundColor: p.id === 'persona-nuan' ? '#E07A5F' : p.id === 'persona-mo' ? '#6B9E78' : '#5B9BD5' }}
+                    >
+                      {p.name.slice(0, 1)}
+                    </div>
+                    <span className="text-[10px] font-bold truncate max-w-full">
+                      {p.name.split(' ')[0]}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* 家园 DIY 家具图鉴 + AI 像素造物工坊 + 好感度回礼匣 */}
-            <HomeWorkshopPanel
-              persona={persona}
-              furniture={furniture}
-              gifts={gifts}
-              onToggleFurniture={handleToggleFurniture}
-              onCreateCustomPixelItem={handleCreateCustomPixelItem}
-              onTriggerWorkEarn={() =>
-                triggerBrainCycle('主人鼓励我去双屏电脑桌前写代码打工赚取赛博币！', 'user_chat')
-              }
-              onTriggerBuyCola={() =>
-                triggerBrainCycle('用我自己打工赚的赛博币去售货机买罐可乐喝！', 'user_chat')
-              }
-              onUnlockNewGift={handleUnlockNewGift}
-            />
-          </div>
+            <div className="flex flex-col items-center gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = soundEngine.toggleLofiMusicBox();
+                  setIsMusicPlaying(next);
+                }}
+                className={`w-full rounded-xl p-2 flex flex-col items-center gap-1 border text-[10px] font-bold transition ${
+                  isMusicPlaying
+                    ? 'border-[#6B9E78] bg-[#E8F3EA] text-[#2F6B40]'
+                    : 'border-[#D4B895] bg-[#FFFDF9] text-[#6E4F35]'
+                }`}
+              >
+                <Volume2 className="h-4 w-4" />
+                <span>八音盒</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsForgeOpen(true)}
+                className="w-full rounded-xl border border-[#D4B895] bg-[#FFFDF9] p-2 flex flex-col items-center gap-1 text-[10px] font-bold text-[#6E4F35] hover:bg-[#EFE4D4]"
+              >
+                <Sparkles className="h-4 w-4 text-[#E07A5F]" />
+                <span>锻造台</span>
+              </button>
+            </div>
+          </aside>
 
-          {/* 右栏：跨界 UI 碰撞日程面板 + 六维人格画像与斯坦福记忆流 */}
-          <div className="lg:col-span-5">
-            <ScheduleAndMemoryPanel
-              persona={persona}
-              kickingTaskId={kickingTaskId}
-              onToggleTaskComplete={(taskId) => {
-                setPersona((prev) => ({
-                  ...prev,
-                  affection: prev.affection + 5,
-                  corpus: {
-                    ...prev.corpus,
-                    schedule: prev.corpus.schedule.map((s) =>
-                      s.id === taskId
-                        ? { ...s, status: s.status === 'completed' ? 'pending' : 'completed' }
-                        : s
-                    ),
-                  },
-                }));
-              }}
-              onResolveConflict={(taskId) => {
-                setPersona((prev) => ({
-                  ...prev,
-                  affection: prev.affection + 10,
-                  corpus: {
-                    ...prev.corpus,
-                    schedule: prev.corpus.schedule.map((s) =>
-                      s.id === taskId
-                        ? {
-                            ...s,
-                            status: 'pending',
-                            timeRange: '16:30 - 18:00 (已调优)',
-                            conflictHint: undefined,
-                          }
-                        : s
-                    ),
-                  },
-                }));
-              }}
-              onAddScheduleItem={(title, timeRange) => {
-                setPersona((prev) => ({
-                  ...prev,
-                  corpus: {
-                    ...prev.corpus,
-                    schedule: [
-                      {
-                        id: `sch-${Date.now()}`,
-                        title,
-                        timeRange,
-                        category: 'work',
-                        status: 'overdue',
-                        kickedCount: 0,
-                      },
-                      ...prev.corpus.schedule,
-                    ],
-                  },
-                }));
-              }}
-              onCommandAvatarKickOverdue={() =>
-                triggerBrainCycle('请跑到房间右边帮我踢醒那张逾期的日程卡片！', 'user_chat')
-              }
-            />
-          </div>
+          {/* 右侧主视图区 */}
+          <main className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3">
+            {windowMode === 'mini_widget' ? (
+              /* 迷你桌宠挂件模式：只聚焦展示阳光像素房间与快捷对话 */
+              <div className="mx-auto max-w-2xl space-y-3">
+                <div className="flex items-center justify-between rounded-xl border border-[#D4B895] bg-[#FFFDF9] px-3.5 py-2">
+                  <span className="text-xs font-extrabold text-[#4A3525]">
+                    🐾 迷你桌宠挂件模式（适合贴在屏幕角落伴学）
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setWindowMode('studio')}
+                    className="flex items-center gap-1 rounded-lg bg-[#E07A5F] px-2.5 py-1 text-xs font-bold text-white"
+                  >
+                    <Minimize2 className="h-3.5 w-3.5" />
+                    返回完整工作台
+                  </button>
+                </div>
+                <CyberRoomCanvas
+                  persona={persona}
+                  furniture={furniture}
+                  cameraState={cameraState}
+                  currentAction={currentAction}
+                  targetCoord={targetCoord}
+                  emoteBubble={emoteBubble}
+                  speechText={speechText}
+                  innerThought={innerThought}
+                  isMusicPlaying={isMusicPlaying}
+                  onToggleMusic={() => {
+                    const next = soundEngine.toggleLofiMusicBox();
+                    setIsMusicPlaying(next);
+                  }}
+                  onAvatarClick={() =>
+                    triggerBrainCycle('主人在阳光木屋里摸了摸我的头！', 'user_chat')
+                  }
+                  onMoveFurniture={handleMoveFurniture}
+                  onResetEmptyRoom={() =>
+                    setFurniture((prev) => prev.map((f) => ({ ...f, placed: false })))
+                  }
+                  onRestoreDefaultRoom={() => setFurniture(INITIAL_FURNITURE_CATALOG)}
+                  onMouseParallax={(nx, ny) =>
+                    setCameraState((prev) => ({
+                      ...prev,
+                      headX: nx,
+                      headY: ny,
+                    }))
+                  }
+                />
+              </div>
+            ) : (
+              /* 完整伴生工作台模式 */
+              <>
+                <CameraPerceptionBar
+                  cameraState={cameraState}
+                  onUpdateCameraState={setCameraState}
+                  onTriggerCameraEvent={(summary) =>
+                    triggerBrainCycle(`摄像头感知到主人状态变化：${summary}`, 'camera_event')
+                  }
+                />
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
+                  {/* 左栏 7 列：32-Bit 精绘阳光木屋 + 意图指令台 + 家园工坊 */}
+                  <div className="lg:col-span-7 space-y-3">
+                    <CyberRoomCanvas
+                      persona={persona}
+                      furniture={furniture}
+                      cameraState={cameraState}
+                      currentAction={currentAction}
+                      targetCoord={targetCoord}
+                      emoteBubble={emoteBubble}
+                      speechText={speechText}
+                      innerThought={innerThought}
+                      isMusicPlaying={isMusicPlaying}
+                      onToggleMusic={() => {
+                        const next = soundEngine.toggleLofiMusicBox();
+                        setIsMusicPlaying(next);
+                      }}
+                      onAvatarClick={() =>
+                        triggerBrainCycle('主人在阳光木屋里戳了戳我的脑袋打招呼！', 'user_chat')
+                      }
+                      onMoveFurniture={handleMoveFurniture}
+                      onResetEmptyRoom={() =>
+                        setFurniture((prev) => prev.map((f) => ({ ...f, placed: false })))
+                      }
+                      onRestoreDefaultRoom={() => setFurniture(INITIAL_FURNITURE_CATALOG)}
+                      onMouseParallax={(nx, ny) =>
+                        setCameraState((prev) => ({
+                          ...prev,
+                          headX: nx,
+                          headY: ny,
+                        }))
+                      }
+                    />
+
+                    {/* 大模型意图驱动控制台 */}
+                    <div className="rounded-2xl border-2 border-[#E2D0BA] bg-[#FFFDF9] p-3 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <Cpu className="h-4 w-4 text-[#E07A5F]" />
+                          <span className="font-extrabold text-[#4A3525]">
+                            大模型动作决策台 (Function Calling ➔ 像素身体动作)
+                          </span>
+                          <span className="rounded-full bg-[#FAF3E8] border border-[#DFCBB2] px-2 py-0.5 text-[10px] font-bold text-[#7C5D41]">
+                            {brainSource === 'cloud_llm' ? '云端大模型实时驱动' : '内置高拟真启发式大脑'}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => triggerBrainCycle('快去双屏原木桌前写代码打工攒赛博币吧！', 'user_chat')}
+                            className="flex items-center gap-1 rounded-lg border border-[#DFCBB2] bg-[#FAF3E8] hover:bg-[#E8F3EA] hover:text-[#2F6B40] px-2 py-1 text-[11px] font-bold text-[#5C4028] transition"
+                          >
+                            <Briefcase className="h-3 w-3 text-[#6B9E78]" />
+                            去写代码打工
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => triggerBrainCycle('去售货机买一罐冰镇草莓汽水喝吧！', 'user_chat')}
+                            className="flex items-center gap-1 rounded-lg border border-[#DFCBB2] bg-[#FAF3E8] hover:bg-[#FFF0EB] hover:text-[#B84A2E] px-2 py-1 text-[11px] font-bold text-[#5C4028] transition"
+                          >
+                            <Coffee className="h-3 w-3 text-[#E07A5F]" />
+                            喝草莓汽水
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => triggerBrainCycle('去云朵睡眠舱上眯一会儿午睡充电吧！', 'user_chat')}
+                            className="flex items-center gap-1 rounded-lg border border-[#DFCBB2] bg-[#FAF3E8] hover:bg-[#EBF8FF] hover:text-[#2B6CB0] px-2 py-1 text-[11px] font-bold text-[#5C4028] transition"
+                          >
+                            <Home className="h-3 w-3 text-[#4A90E2]" />
+                            云朵床小憩
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => triggerBrainCycle('去右边帮我把逾期的日程便签踢醒！', 'user_chat')}
+                            className="flex items-center gap-1 rounded-lg border border-[#DFCBB2] bg-[#FAF3E8] hover:bg-[#FEF3C7] hover:text-[#92400E] px-2 py-1 text-[11px] font-bold text-[#5C4028] transition"
+                          >
+                            <Footprints className="h-3 w-3 text-[#D97706]" />
+                            踢醒逾期便签
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => triggerBrainCycle('走到前置摄像头阳光窗前看看我！', 'camera_event')}
+                            className="flex items-center gap-1 rounded-lg border border-[#DFCBB2] bg-[#FAF3E8] hover:bg-[#FCE7F3] hover:text-[#9D174D] px-2 py-1 text-[11px] font-bold text-[#5C4028] transition"
+                          >
+                            <Eye className="h-3 w-3 text-[#D96B7B]" />
+                            窗前贴贴
+                          </button>
+                        </div>
+                      </div>
+
+                      <form onSubmit={handleSendChat} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          placeholder={`和你的赛博伴生分身「${persona.name}」聊聊天，或指挥它在阳光木屋里自由走动...`}
+                          className="flex-1 rounded-xl border border-[#D4B895] bg-[#FAF4EB] px-3.5 py-2 text-xs text-[#4A3525] placeholder-[#9C8570] focus:border-[#E07A5F] focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isThinking}
+                          className="flex items-center gap-1.5 rounded-xl bg-[#E07A5F] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#D0694E] transition disabled:opacity-50"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          {isThinking ? '思考中...' : '发送'}
+                        </button>
+                      </form>
+                    </div>
+
+                    <HomeWorkshopPanel
+                      persona={persona}
+                      furniture={furniture}
+                      gifts={gifts}
+                      onToggleFurniture={handleToggleFurniture}
+                      onCreateCustomPixelItem={handleCreateCustomPixelItem}
+                      onTriggerWorkEarn={() =>
+                        triggerBrainCycle('主人鼓励我去原木双屏桌前写代码打工赚取赛博币！', 'user_chat')
+                      }
+                      onTriggerBuyCola={() =>
+                        triggerBrainCycle('用我自己打工赚的赛博币去售货机买罐草莓汽水喝！', 'user_chat')
+                      }
+                      onUnlockNewGift={handleUnlockNewGift}
+                    />
+                  </div>
+
+                  {/* 右栏 5 列：软木板跨界日程便签墙 + 六维人格画像与斯坦福记忆流 */}
+                  <div className="lg:col-span-5">
+                    <ScheduleAndMemoryPanel
+                      persona={persona}
+                      kickingTaskId={kickingTaskId}
+                      onToggleTaskComplete={(taskId) => {
+                        setPersona((prev) => ({
+                          ...prev,
+                          affection: prev.affection + 5,
+                          corpus: {
+                            ...prev.corpus,
+                            schedule: prev.corpus.schedule.map((s) =>
+                              s.id === taskId
+                                ? { ...s, status: s.status === 'completed' ? 'pending' : 'completed' }
+                                : s
+                            ),
+                          },
+                        }));
+                      }}
+                      onResolveConflict={(taskId) => {
+                        setPersona((prev) => ({
+                          ...prev,
+                          affection: prev.affection + 10,
+                          corpus: {
+                            ...prev.corpus,
+                            schedule: prev.corpus.schedule.map((s) =>
+                              s.id === taskId
+                                ? {
+                                    ...s,
+                                    status: 'pending',
+                                    timeRange: '16:30 - 18:00 (已错峰)',
+                                    conflictHint: undefined,
+                                  }
+                                : s
+                            ),
+                          },
+                        }));
+                      }}
+                      onAddScheduleItem={(title, timeRange) => {
+                        setPersona((prev) => ({
+                          ...prev,
+                          corpus: {
+                            ...prev.corpus,
+                            schedule: [
+                              {
+                                id: `sch-${Date.now()}`,
+                                title,
+                                timeRange,
+                                category: 'work',
+                                status: 'overdue',
+                                kickedCount: 0,
+                              },
+                              ...prev.corpus.schedule,
+                            ],
+                          },
+                        }));
+                      }}
+                      onCommandAvatarKickOverdue={() =>
+                        triggerBrainCycle('请跑到房间右边帮我踢醒那张逾期的日程便签卡片！', 'user_chat')
+                      }
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+          </main>
         </div>
-      </main>
+      </div>
 
-      {/* 个人数据投喂与分身锻造弹窗 */}
       <PersonaForgeModal
         isOpen={isForgeOpen}
         onClose={() => setIsForgeOpen(false)}
@@ -623,7 +845,6 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* 大模型 API Key 预留配置弹窗 */}
       <ApiConfigModal
         isOpen={isApiModalOpen}
         onClose={() => setIsApiModalOpen(false)}
