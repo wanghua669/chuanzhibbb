@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #060913;
+    color: #f1f5f9;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom Cyber Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.35);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.65);
+}
+
+@keyframes uiShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-8px, -4px) rotate(-2.5deg); }
+  40% { transform: translate(8px, 3px) rotate(2.5deg); }
+  60% { transform: translate(-6px, 2px) rotate(-1.5deg); }
+  80% { transform: translate(5px, -2px) rotate(1.5deg); }
+}
+
+.animate-ui-kick {
+  animation: uiShake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
